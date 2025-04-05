@@ -5,12 +5,13 @@ class VotingOption(TypedDict):
     id: str
     text: str
 
-def create_ranked_choice_prompt(options: List[VotingOption]) -> List[Dict[str, Any]]:
+def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranked Choice Voting") -> List[Dict[str, Any]]:
     """
     Creates a Slack blocks message for ranked choice voting with interactive buttons.
     
     Args:
         options: List of voting options with id and text
+        title: Title of the poll
         
     Returns:
         List of Slack blocks
@@ -20,7 +21,7 @@ def create_ranked_choice_prompt(options: List[VotingOption]) -> List[Dict[str, A
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": "🗳️ Ranked Choice Voting",
+                "text": f"🗳️ {title}",
                 "emoji": True
             }
         },
@@ -28,7 +29,7 @@ def create_ranked_choice_prompt(options: List[VotingOption]) -> List[Dict[str, A
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Click the options below in order from most to least preferred:"
+                "text": "Click the options below to rank your choices (1 being your top choice):"
             }
         },
         {
@@ -128,57 +129,53 @@ def update_rankings_message(blocks: List[Dict[str, Any]], rankings: List[str], o
 
 def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
     """
-    Creates the home tab view for the Slack app.
+    Create the home tab view.
     
     Args:
         active_votes: List of active voting sessions
         
     Returns:
-        Home tab view
+        Dict containing the view definition
     """
-    # Create the home tab view
-    view = {
-        "type": "home",
-        "blocks": [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": "🗳️ Ranked Choice Voting",
-                    "emoji": True
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "Welcome to the Ranked Choice Voting app! Use this tab to manage voting sessions."
-                }
-            },
-            {
-                "type": "divider"
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Active Voting Sessions:*"
-                }
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "🗳️ Ranked Choice Voting",
+                "emoji": True
             }
-        ]
-    }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Welcome to the Ranked Choice Voting app! Use this tab to manage voting sessions."
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Active Voting Sessions:*"
+            }
+        }
+    ]
     
     # Add active voting sessions
     if active_votes:
         for vote in active_votes:
-            view["blocks"].append({
+            blocks.append({
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
                     "text": f"*Channel:* #{vote['channel_name']}"
                 }
             })
-            view["blocks"].append({
+            blocks.append({
                 "type": "actions",
                 "elements": [
                     {
@@ -205,7 +202,7 @@ def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
                 ]
             })
     else:
-        view["blocks"].append({
+        blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
@@ -214,7 +211,7 @@ def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
         })
     
     # Add start voting section
-    view["blocks"].extend([
+    blocks.extend([
         {
             "type": "divider"
         },
@@ -243,6 +240,41 @@ def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
             }
         },
         {
+            "type": "input",
+            "element": {
+                "type": "plain_text_input",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Enter poll title (e.g., 'Team Lunch Options')",
+                    "emoji": True
+                },
+                "action_id": "poll_title"
+            },
+            "label": {
+                "type": "plain_text",
+                "text": "Poll Title",
+                "emoji": True
+            }
+        },
+        {
+            "type": "input",
+            "element": {
+                "type": "plain_text_input",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Enter options (one per line)",
+                    "emoji": True
+                },
+                "multiline": True,
+                "action_id": "poll_options"
+            },
+            "label": {
+                "type": "plain_text",
+                "text": "Poll Options",
+                "emoji": True
+            }
+        },
+        {
             "type": "actions",
             "elements": [
                 {
@@ -253,11 +285,13 @@ def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
                         "emoji": True
                     },
                     "style": "primary",
-                    "action_id": "start_voting",
-                    "disabled": True
+                    "action_id": "start_voting"
                 }
             ]
         }
     ])
     
-    return view 
+    return {
+        "type": "home",
+        "blocks": blocks
+    } 

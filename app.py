@@ -1,4 +1,5 @@
 import os
+import uuid
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, TypedDict, Union
 
@@ -42,25 +43,22 @@ class VotingOption(TypedDict):
     id: str
     text: str
 
+class PollSession(TypedDict):
+    is_active: bool
+    message_ts: Optional[str]
+    title: str
+    options: List[VotingOption]
+
 # Initialize the Slack app
 app: App = App(token=os.environ.get("SLACK_BOT_TOKEN"), signing_secret=os.environ.get("SLACK_SIGNING_SECRET"))
-
-# Sample voting options (in a real app, these would come from a database or user input)
-VOTING_OPTIONS: List[VotingOption] = [
-    {"id": "pizza", "text": "Pizza Party 🍕"},
-    {"id": "movie", "text": "Movie Night 🎬"},
-    {"id": "game", "text": "Game Night 🎮"},
-    {"id": "workshop", "text": "Team Building Workshop 🏢"},
-    {"id": "adventure", "text": "Outdoor Adventure 🌲"}
-]
 
 # Store user rankings (in a real app, this would be in a database)
 # Format: {message_ts: {user_id: [rankings]}}
 user_rankings: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
 
 # Store active voting sessions
-# Format: {channel_id: {is_active: bool, message_ts: str}}
-active_sessions: Dict[str, Dict[str, Union[bool, str]]] = defaultdict(lambda: {"is_active": False, "message_ts": None})
+# Format: {channel_id: {is_active: bool, message_ts: str, title: str, options: List[VotingOption]}}
+active_sessions: Dict[str, PollSession] = defaultdict(lambda: {"is_active": False, "message_ts": None, "title": "", "options": []})
 
 # Message listener that responds to "hello"
 @app.message("hello")
@@ -98,7 +96,7 @@ def handle_channel_select(ack: SlackAck, body: SlackBody, client: WebClient) -> 
     # Get the selected channel
     channel_id = body["actions"][0]["selected_channel"]
     
-    # Update the home view to enable the Start Voting button
+    # Update the home view
     client.views_update(
         view_id=body["view"]["id"],
         view=create_home_view(active_sessions)
@@ -115,9 +113,9 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
         })
         return
     
-    # Get the first block ID and its channel_select value
-    block_id = next(iter(body["view"]["state"]["values"]))
-    channel_id = body["view"]["state"]["values"][block_id]["channel_select"]["selected_channel"]
+    # Get the channel ID
+    channel_block_id = next(iter(body["view"]["state"]["values"]))
+    channel_id = body["view"]["state"]["values"][channel_block_id]["channel_select"]["selected_channel"]
     
     if not channel_id:
         ack({
@@ -125,6 +123,53 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
             "text": "Please select a channel first."
         })
         return
+    
+    # Get the poll title and options from the view state
+    view_state = body["view"]["state"]["values"]
+    
+    # Find the poll title field
+    poll_title = None
+    for block_id, block_data in view_state.items():
+        if "poll_title" in block_data:
+            poll_title = block_data["poll_title"]["value"]
+            break
+    
+    if not poll_title:
+        ack({
+            "response_type": "ephemeral",
+            "text": "Please enter a poll title."
+        })
+        return
+    
+    # Find the poll options field
+    poll_options_text = None
+    for block_id, block_data in view_state.items():
+        if "poll_options" in block_data:
+            poll_options_text = block_data["poll_options"]["value"]
+            break
+    
+    if not poll_options_text:
+        ack({
+            "response_type": "ephemeral",
+            "text": "Please enter poll options."
+        })
+        return
+    
+    # Parse the options (one per line)
+    options_text = [opt.strip() for opt in poll_options_text.split("\n") if opt.strip()]
+    
+    if len(options_text) < 2:
+        ack({
+            "response_type": "ephemeral",
+            "text": "Please enter at least 2 options."
+        })
+        return
+    
+    # Create option objects with unique IDs
+    options = []
+    for text in options_text:
+        option_id = str(uuid.uuid4())[:8]  # Generate a short unique ID
+        options.append({"id": option_id, "text": text})
     
     # Check if there's already an active session in this channel
     if active_sessions[channel_id]["is_active"]:
@@ -140,14 +185,16 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     # Send the ranked choice voting prompt
     response = client.chat_postMessage(
         channel=channel_id,
-        blocks=create_ranked_choice_prompt(VOTING_OPTIONS)
+        blocks=create_ranked_choice_prompt(options, poll_title)
     )
     
     # Store the message timestamp and mark session as active
     message_ts = response["ts"]
     active_sessions[channel_id] = {
         "is_active": True,
-        "message_ts": message_ts
+        "message_ts": message_ts,
+        "title": poll_title,
+        "options": options
     }
     
     # Initialize empty rankings for this message
@@ -201,15 +248,14 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     session_rankings = user_rankings[message_ts]
     
     # Calculate and display results
-    # (This is a simple implementation - in a real app, you'd want more sophisticated ranking algorithms)
     results = calculate_results(session_rankings)
     
     # Create a mapping of option IDs to their text
-    option_map = {option["id"]: option["text"] for option in VOTING_OPTIONS}
+    option_map = {option["id"]: option["text"] for option in active_sessions[channel_id]["options"]}
     
     client.chat_postMessage(
         channel=channel_id,
-        text=f"*Voting Results:*\n" + "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)} - {count} votes" for idx, (option_id, count) in enumerate(results))
+        text=f"*{active_sessions[channel_id]['title']} - Results:*\n" + "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)} - {count} votes" for idx, (option_id, count) in enumerate(results))
     )
 
 # Handle option selection
@@ -233,14 +279,18 @@ def handle_option_selection(ack: SlackAck, body: SlackBody, client: WebClient) -
     # Add the option to rankings
     current_rankings.append(selected_option_id)
     
+    # Get the options for this session
+    options = active_sessions[channel_id]["options"]
+    title = active_sessions[channel_id]["title"]
+    
     # Update the message
     client.chat_update(
         channel=channel_id,
         ts=message_ts,
         blocks=update_rankings_message(
-            create_ranked_choice_prompt(VOTING_OPTIONS),
+            create_ranked_choice_prompt(options, title),
             current_rankings,
-            VOTING_OPTIONS
+            options
         )
     )
 
@@ -265,7 +315,7 @@ def handle_submit_rankings(ack: SlackAck, body: SlackBody, client: WebClient) ->
         return
     
     # Create a mapping of option IDs to their text
-    option_map = {option["id"]: option["text"] for option in VOTING_OPTIONS}
+    option_map = {option["id"]: option["text"] for option in active_sessions[channel_id]["options"]}
     
     # In a real app, you would save these rankings to a database
     client.chat_postMessage(
@@ -286,14 +336,18 @@ def handle_clear_rankings(ack: SlackAck, body: SlackBody, client: WebClient) -> 
     # Clear rankings for this user
     user_rankings[message_ts][user_id] = []
     
+    # Get the options for this session
+    options = active_sessions[channel_id]["options"]
+    title = active_sessions[channel_id]["title"]
+    
     # Update the message
     client.chat_update(
         channel=channel_id,
         ts=message_ts,
         blocks=update_rankings_message(
-            create_ranked_choice_prompt(VOTING_OPTIONS),
+            create_ranked_choice_prompt(options, title),
             [],
-            VOTING_OPTIONS
+            options
         )
     )
 
