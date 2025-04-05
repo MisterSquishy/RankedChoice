@@ -85,7 +85,7 @@ def handle_app_home_opened(event: SlackEvent, client: WebClient) -> None:
     # Update the home tab
     client.views_publish(
         user_id=user_id,
-        view=create_home_view(active_votes)
+        view=create_home_view(active_votes, user_rankings)
     )
 
 # Handle channel selection
@@ -99,7 +99,7 @@ def handle_channel_select(ack: SlackAck, body: SlackBody, client: WebClient) -> 
     # Update the home view
     client.views_update(
         view_id=body["view"]["id"],
-        view=create_home_view(active_sessions)
+        view=create_home_view(active_sessions, user_rankings)
     )
 
 # Handle start voting button click
@@ -283,6 +283,32 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     client.chat_postMessage(
         channel=channel_id,
         text=f"Current leader: *{active_sessions[channel_id]['title']} - Results:*\n{option_map[result]}"
+    )
+
+# Handle show results button click
+@app.action("bump")
+def handle_bump(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
+    ack()
+    
+    # Get the selected channel
+    channel_id = body["actions"][0]["value"]
+    
+    # Check if there's an active session in this channel
+    if not active_sessions[channel_id]["is_active"]:
+        client.chat_postMessage(
+            channel=channel_id,
+            text="There is no active voting session in this channel."
+        )
+        return
+    
+    # Get the message timestamp
+    message_ts = active_sessions[channel_id]["message_ts"]
+    
+    client.chat_postMessage(
+        channel=channel_id,
+        thread_ts=message_ts,
+        reply_broadcast=True,
+        text="Don't forget to vote!"
     )
 
 # Handle option selection
@@ -474,7 +500,7 @@ def update_all_home_tabs(client: WebClient) -> None:
         if not user["is_bot"] and not user["deleted"]:
             client.views_publish(
                 user_id=user["id"],
-                view=create_home_view(active_votes)
+                view=create_home_view(active_votes, user_rankings)
             )
 
 # Start the app

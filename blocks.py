@@ -155,7 +155,7 @@ def update_rankings_message(blocks: List[Dict[str, Any]], rankings: List[str], o
     return blocks
 
 
-def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
+def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str, Dict[str, List[str]]]) -> Dict[str, Any]:
     """
     Create the home tab view.
     
@@ -204,13 +204,20 @@ def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
                 }
             })
             blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Submitted ballots:* {len(user_rankings.get(vote['message_ts'], []))}"
+                }
+            })
+            blocks.append({
                 "type": "actions",
                 "elements": [
                     {
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": "Stop Voting",
+                            "text": "Stop voting",
                             "emoji": True
                         },
                         "style": "danger",
@@ -221,12 +228,22 @@ def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": "Show Results",
+                            "text": "Show current results",
                             "emoji": True
                         },
                         "action_id": "show_results",
                         "value": vote["channel_id"]
-                    }
+                    },
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Bump",
+                            "emoji": True
+                        },
+                        "action_id": "bump",
+                        "value": vote["channel_id"]
+                    },
                 ]
             })
     else:
