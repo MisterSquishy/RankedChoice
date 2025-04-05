@@ -315,7 +315,7 @@ def create_ranked_choice_ballot(title: str, options: List[VotingOption], message
         "private_metadata": message_ts,  # Store the message_ts in private_metadata
         "title": {
             "type": "plain_text",
-            "text": f"Ballot: {title}",
+            "text": f"Ballot: {title[:15]}…" if len(title) > 16 else f"Ballot: {title}",
             "emoji": True
         },
         "submit": {

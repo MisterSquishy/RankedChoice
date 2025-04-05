@@ -14,3 +14,7 @@ primary_region = "bos"
 
 [env]
   PORT = "3000"
+
+[mounts]
+  source = "data"
+  destination = "/data"
