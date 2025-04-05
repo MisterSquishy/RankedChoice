@@ -371,6 +371,35 @@ def handle_clear_rankings(ack: SlackAck, body: SlackBody, client: WebClient) -> 
         )
     )
 
+# Handle clearing rankings
+@app.action("delete_lowest_rank")
+def handle_delete_lowest_rank(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
+    ack()
+    
+    # Extract information from the action
+    user_id = body["user"]["id"]
+    message_ts = body["container"]["message_ts"]
+    channel_id = body["container"]["channel_id"]
+    
+    # Clear rankings for this user
+    cur_rankings =  user_rankings[message_ts][user_id]
+    user_rankings[message_ts][user_id] = cur_rankings[0:-1]
+    
+    # Get the options for this session
+    options = active_sessions[channel_id]["options"]
+    title = active_sessions[channel_id]["title"]
+    
+    # Update the message
+    client.chat_update(
+        channel=channel_id,
+        ts=message_ts,
+        blocks=update_rankings_message(
+            create_ranked_choice_prompt(options, title),
+            user_rankings[message_ts][user_id],
+            options
+        )
+    )
+
 def calculate_results(rankings: Dict[str, List[str]]) -> List[tuple]:
     """
     Calculate the results of a voting session.

@@ -77,7 +77,7 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": "Submit Rankings",
+                        "text": "Submit",
                         "emoji": True
                     },
                     "style": "primary",
@@ -87,7 +87,16 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": "Clear Rankings",
+                        "text": "Delete last choice",
+                        "emoji": True
+                    },
+                    "action_id": "delete_lowest_rank"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Clear",
                         "emoji": True
                     },
                     "style": "danger",
