@@ -28,7 +28,7 @@ def create_ranked_choice_prompt(options: List[VotingOption]) -> List[Dict[str, A
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Click the options below to rank your choices (1 being your top choice):"
+                "text": "Click the options below in order from most to least preferred:"
             }
         },
         {
@@ -253,7 +253,8 @@ def create_home_view(active_votes: List[Dict[str, str]]) -> Dict[str, Any]:
                         "emoji": True
                     },
                     "style": "primary",
-                    "action_id": "start_voting"
+                    "action_id": "start_voting",
+                    "disabled": True
                 }
             ]
         }

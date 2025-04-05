@@ -90,26 +90,52 @@ def handle_app_home_opened(event: SlackEvent, client: WebClient) -> None:
         view=create_home_view(active_votes)
     )
 
+# Handle channel selection
+@app.action("channel_select")
+def handle_channel_select(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
+    ack()
+    
+    # Get the selected channel
+    channel_id = body["actions"][0]["selected_channel"]
+    
+    # Update the home view to enable the Start Voting button
+    client.views_update(
+        view_id=body["view"]["id"],
+        view=create_home_view(active_sessions)
+    )
+
 # Handle start voting button click
 @app.action("start_voting")
 def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
-    ack()
-    
     # Get the selected channel from the view state
     if not body.get("view") or not body["view"].get("state"):
+        ack({
+            "response_type": "ephemeral",
+            "text": "Please select a channel first."
+        })
         return
     
     # Get the first block ID and its channel_select value
     block_id = next(iter(body["view"]["state"]["values"]))
     channel_id = body["view"]["state"]["values"][block_id]["channel_select"]["selected_channel"]
     
+    if not channel_id:
+        ack({
+            "response_type": "ephemeral",
+            "text": "Please select a channel first."
+        })
+        return
+    
     # Check if there's already an active session in this channel
     if active_sessions[channel_id]["is_active"]:
-        client.chat_postMessage(
-            channel=channel_id,
-            text="There is already an active voting session in this channel."
-        )
+        ack({
+            "response_type": "ephemeral",
+            "text": "There is already an active voting session in this channel."
+        })
         return
+    
+    # Acknowledge the action
+    ack()
     
     # Send the ranked choice voting prompt
     response = client.chat_postMessage(
@@ -244,8 +270,7 @@ def handle_submit_rankings(ack: SlackAck, body: SlackBody, client: WebClient) ->
     # In a real app, you would save these rankings to a database
     client.chat_postMessage(
         channel=channel_id,
-        text=f"<@{user_id}> has submitted their rankings:\n" + 
-             "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)}" for idx, option_id in enumerate(current_rankings))
+        text=f"<@{user_id}> has submitted their rankings!"
     )
 
 # Handle clearing rankings
