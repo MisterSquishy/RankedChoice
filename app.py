@@ -4,9 +4,6 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
-from slack_bolt.context import BoltContext
-from slack_bolt.context.say import Say
 
 from blocks import create_ranked_choice_prompt, update_rankings_message
 
@@ -14,7 +11,7 @@ from blocks import create_ranked_choice_prompt, update_rankings_message
 load_dotenv()
 
 # Initialize the Slack app
-app: App = App(token=os.environ.get("SLACK_BOT_TOKEN"))
+app: App = App(token=os.environ.get("SLACK_BOT_TOKEN"), signing_secret=os.environ.get("SLACK_SIGNING_SECRET"))
 
 # Sample voting options (in a real app, these would come from a database or user input)
 VOTING_OPTIONS: List[str] = [
@@ -31,12 +28,12 @@ user_rankings: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: defaultdict
 
 # Message listener that responds to "hello"
 @app.message("hello")
-def message_hello(message: Dict[str, Any], context: BoltContext, say: Say) -> None:
+def message_hello(message: Dict[str, Any], say: Any) -> None:
     say(f"Hey there <@{message['user']}>! 👋")
 
 # Command to start ranked choice voting
 @app.command("/ranked-vote")
-def handle_ranked_vote(ack: Any, body: Dict[str, Any], say: Say) -> None:
+def handle_ranked_vote(ack: Any, body: Dict[str, Any], say: Any) -> None:
     # Acknowledge the command request
     ack()
     
@@ -130,5 +127,5 @@ def handle_clear_rankings(ack: Any, body: Dict[str, Any], client: Any) -> None:
 
 # Start the app
 if __name__ == "__main__":
-    handler: SocketModeHandler = SocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN"))
-    handler.start() 
+    # Use Bolt's built-in HTTP server
+    app.start(port=3000) 
