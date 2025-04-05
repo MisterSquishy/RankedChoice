@@ -38,16 +38,20 @@ class SlackEvent(TypedDict):
 class SlackAck(TypedDict):
     __call__: Callable[[], None]
 
+class VotingOption(TypedDict):
+    id: str
+    text: str
+
 # Initialize the Slack app
 app: App = App(token=os.environ.get("SLACK_BOT_TOKEN"), signing_secret=os.environ.get("SLACK_SIGNING_SECRET"))
 
 # Sample voting options (in a real app, these would come from a database or user input)
-VOTING_OPTIONS: List[str] = [
-    "Pizza Party 🍕",
-    "Movie Night 🎬",
-    "Game Night 🎮",
-    "Team Building Workshop 🏢",
-    "Outdoor Adventure 🌲"
+VOTING_OPTIONS: List[VotingOption] = [
+    {"id": "pizza", "text": "Pizza Party 🍕"},
+    {"id": "movie", "text": "Movie Night 🎬"},
+    {"id": "game", "text": "Game Night 🎮"},
+    {"id": "workshop", "text": "Team Building Workshop 🏢"},
+    {"id": "adventure", "text": "Outdoor Adventure 🌲"}
 ]
 
 # Store user rankings (in a real app, this would be in a database)
@@ -174,13 +178,16 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     # (This is a simple implementation - in a real app, you'd want more sophisticated ranking algorithms)
     results = calculate_results(session_rankings)
     
+    # Create a mapping of option IDs to their text
+    option_map = {option["id"]: option["text"] for option in VOTING_OPTIONS}
+    
     client.chat_postMessage(
         channel=channel_id,
-        text=f"*Voting Results:*\n" + "\n".join(f"{idx + 1}. {option} - {count} votes" for idx, (option, count) in enumerate(results))
+        text=f"*Voting Results:*\n" + "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)} - {count} votes" for idx, (option_id, count) in enumerate(results))
     )
 
 # Handle option selection
-@app.action("select_option_")
+@app.action("select_option")
 def handle_option_selection(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
     ack()
     
@@ -188,17 +195,17 @@ def handle_option_selection(ack: SlackAck, body: SlackBody, client: WebClient) -
     user_id = body["user"]["id"]
     message_ts = body["container"]["message_ts"]
     channel_id = body["container"]["channel_id"]
-    selected_option = body["actions"][0]["value"]
+    selected_option_id = body["actions"][0]["value"]
     
     # Get current rankings for this user
     current_rankings = user_rankings[message_ts][user_id]
     
     # Check if option is already ranked
-    if selected_option in current_rankings:
+    if selected_option_id in current_rankings:
         return
     
     # Add the option to rankings
-    current_rankings.append(selected_option)
+    current_rankings.append(selected_option_id)
     
     # Update the message
     client.chat_update(
@@ -206,7 +213,8 @@ def handle_option_selection(ack: SlackAck, body: SlackBody, client: WebClient) -
         ts=message_ts,
         blocks=update_rankings_message(
             create_ranked_choice_prompt(VOTING_OPTIONS),
-            current_rankings
+            current_rankings,
+            VOTING_OPTIONS
         )
     )
 
@@ -230,11 +238,14 @@ def handle_submit_rankings(ack: SlackAck, body: SlackBody, client: WebClient) ->
         )
         return
     
+    # Create a mapping of option IDs to their text
+    option_map = {option["id"]: option["text"] for option in VOTING_OPTIONS}
+    
     # In a real app, you would save these rankings to a database
     client.chat_postMessage(
         channel=channel_id,
         text=f"<@{user_id}> has submitted their rankings:\n" + 
-             "\n".join(f"{idx + 1}. {option}" for idx, option in enumerate(current_rankings))
+             "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)}" for idx, option_id in enumerate(current_rankings))
     )
 
 # Handle clearing rankings
@@ -256,7 +267,8 @@ def handle_clear_rankings(ack: SlackAck, body: SlackBody, client: WebClient) -> 
         ts=message_ts,
         blocks=update_rankings_message(
             create_ranked_choice_prompt(VOTING_OPTIONS),
-            []
+            [],
+            VOTING_OPTIONS
         )
     )
 
@@ -265,10 +277,10 @@ def calculate_results(rankings: Dict[str, List[str]]) -> List[tuple]:
     Calculate the results of a voting session.
     
     Args:
-        rankings: Dictionary of user rankings
+        rankings: Dictionary of user rankings (option IDs)
         
     Returns:
-        List of tuples (option, count) sorted by count
+        List of tuples (option_id, count) sorted by count
     """
     # Count first-choice votes
     first_choice_counts = defaultdict(int)

@@ -1,12 +1,16 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypedDict
 
 
-def create_ranked_choice_prompt(options: List[str]) -> List[Dict[str, Any]]:
+class VotingOption(TypedDict):
+    id: str
+    text: str
+
+def create_ranked_choice_prompt(options: List[VotingOption]) -> List[Dict[str, Any]]:
     """
     Creates a Slack blocks message for ranked choice voting with interactive buttons.
     
     Args:
-        options: List of voting options
+        options: List of voting options with id and text
         
     Returns:
         List of Slack blocks
@@ -55,15 +59,15 @@ def create_ranked_choice_prompt(options: List[str]) -> List[Dict[str, Any]]:
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": option,
+                            "text": option["text"],
                             "emoji": True
                         },
-                        "value": option,
-                        "action_id": f"select_option_{idx}"
+                        "value": option["id"],
+                        "action_id": "select_option"
                     }
                 ]
             }
-            for idx, option in enumerate(options)
+            for option in options
         ],
         {
             "type": "actions",
@@ -93,23 +97,27 @@ def create_ranked_choice_prompt(options: List[str]) -> List[Dict[str, Any]]:
     ]
 
 
-def update_rankings_message(blocks: List[Dict[str, Any]], rankings: List[str]) -> List[Dict[str, Any]]:
+def update_rankings_message(blocks: List[Dict[str, Any]], rankings: List[str], options: List[VotingOption]) -> List[Dict[str, Any]]:
     """
     Updates the rankings section of the message with current rankings.
     
     Args:
         blocks: Original message blocks
-        rankings: Current list of ranked options
+        rankings: Current list of ranked option IDs
+        options: List of all options with id and text
         
     Returns:
         Updated message blocks
     """
+    # Create a mapping of option IDs to their text
+    option_map = {option["id"]: option["text"] for option in options}
+    
     # Find the rankings section and update it
     for block in blocks:
         if block.get("type") == "section" and "Your Rankings:" in block["text"]["text"]:
             rankings_text = "*Your Rankings:*\n"
             if rankings:
-                rankings_text += "\n".join(f"{idx + 1}. {option}" for idx, option in enumerate(rankings))
+                rankings_text += "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)}" for idx, option_id in enumerate(rankings))
             else:
                 rankings_text += "No rankings yet"
             block["text"]["text"] = rankings_text
