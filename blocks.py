@@ -206,7 +206,7 @@ def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, 
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Start a New Vote*"
+                "text": "*Start a new election*"
             }
         },
         {
@@ -255,7 +255,7 @@ def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, 
             },
             "label": {
                 "type": "plain_text",
-                "text": "Poll Options",
+                "text": "Poll options",
                 "emoji": True
             }
         },
