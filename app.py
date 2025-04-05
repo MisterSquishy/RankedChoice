@@ -219,6 +219,26 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
         )
         return
     
+    # Get the message timestamp and session info
+    message_ts = active_sessions[channel_id]["message_ts"]
+    title = active_sessions[channel_id]["title"]
+    options = active_sessions[channel_id]["options"]
+    
+    # Get all rankings for this session
+    session_rankings = user_rankings[message_ts]
+    
+    # Calculate and display results
+    results = calculate_results(session_rankings)
+    
+    # Create a mapping of option IDs to their text
+    option_map = {option["id"]: option["text"] for option in options}
+    
+    # Post final results
+    client.chat_postMessage(
+        channel=channel_id,
+        text=f"*{title} - Final Results:*\n" + "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)} - {count} votes" for idx, (option_id, count) in enumerate(results))
+    )
+    
     # Mark session as inactive
     active_sessions[channel_id]["is_active"] = False
     
