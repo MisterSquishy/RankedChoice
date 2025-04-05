@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from typing import Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 
 class VotingOption(TypedDict):
@@ -194,4 +194,47 @@ class Database:
                 "DELETE FROM ballots WHERE message_ts = ? AND user_id = ?",
                 (message_ts, user_id)
             )
-            conn.commit() 
+            conn.commit()
+
+    def get_ballot(self, message_ts: str, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get a ballot for a user."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT message_ts, user_id, rankings, is_submitted
+                FROM ballots
+                WHERE message_ts = ? AND user_id = ?
+                """,
+                (message_ts, user_id)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "message_ts": row[0],
+                    "user_id": row[1],
+                    "rankings": json.loads(row[2]) if row[2] else [],
+                    "is_submitted": bool(row[3])
+                }
+            return None
+
+    def get_vote(self, message_ts: str) -> Optional[Dict[str, Any]]:
+        """Get vote details by message timestamp."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT title, options, channel_id
+                FROM elections
+                WHERE message_ts = ? AND is_active
+                """,
+                (message_ts,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "title": row[0],
+                    "options": json.loads(row[1]),
+                    "channel_id": row[2]
+                }
+            return None 

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, TypedDict
 
 
@@ -5,7 +6,7 @@ class VotingOption(TypedDict):
     id: str
     text: str
 
-def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranked Choice Voting") -> List[Dict[str, Any]]:
+def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranked Choice Voting", description: str = "") -> List[Dict[str, Any]]:
     """
     Creates a Slack blocks message for ranked choice voting with interactive buttons.
     
@@ -29,47 +30,9 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Click the options below to rank your choices (1 being your top choice):"
+                "text": description
             }
         },
-        {
-            "type": "divider"
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*Your rankings:*\nNo rankings yet"
-            }
-        },
-        {
-            "type": "divider"
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*Available options:*"
-            }
-        },
-        *[
-            {
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": option["text"],
-                            "emoji": True
-                        },
-                        "value": option["id"],
-                        "action_id": "select_option"
-                    }
-                ]
-            }
-            for option in options
-        ],
         {
             "type": "actions",
             "elements": [
@@ -77,21 +40,11 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": "Submit",
+                        "text": "Request a ballot",
                         "emoji": True
                     },
                     "style": "primary",
-                    "action_id": "submit_rankings"
-                },
-                {
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "Clear",
-                        "emoji": True
-                    },
-                    "style": "danger",
-                    "action_id": "clear_rankings"
+                    "action_id": "request_ballot"
                 }
             ]
         }
@@ -154,15 +107,8 @@ def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, 
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": "Ranked Choice Voting",
+                "text": "RankedChoice admin console",
                 "emoji": True
-            }
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Welcome to the RankedChoice app! Use this app to create and participate in ranked choice voting polls."
             }
         },
         {
@@ -225,7 +171,7 @@ def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, 
                                 "text": "Show current results",
                                 "emoji": True
                             },
-                            "value": f"{channel_id}|{title}",
+                            "value": channel_id,
                             "action_id": "show_results"
                         },
                         {
@@ -275,7 +221,24 @@ def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, 
             },
             "label": {
                 "type": "plain_text",
-                "text": "Poll Title",
+                "text": "Poll title",
+                "emoji": True
+            }
+        },
+        {
+            "type": "input",
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "poll_description",
+                "multiline": True,
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Enter description"
+                }
+            },
+            "label": {
+                "type": "plain_text",
+                "text": "Poll description",
                 "emoji": True
             }
         },
@@ -333,4 +296,143 @@ def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, 
     return {
         "type": "home",
         "blocks": blocks
-    } 
+    }
+
+def create_ranked_choice_ballot(title: str, options: List[VotingOption], message_ts: str, current_rankings: List[str] = None) -> Dict[str, Any]:
+    """Create a modal view for the ranked choice ballot."""
+    current_rankings = current_rankings or []
+    rankings_text = "*Your rankings:*\n"
+    if len(current_rankings) > 0:
+        options_map = {option["id"]: option["text"] for option in options}
+        rankings_text += "\n".join(f"{idx + 1}. {options_map.get(option_id, option_id)}" for idx, option_id in enumerate(current_rankings))
+    else:
+        rankings_text += "No rankings yet"
+    
+    # Create the modal view
+    return {
+        "type": "modal",
+        "callback_id": "ballot_modal",
+        "private_metadata": message_ts,  # Store the message_ts in private_metadata
+        "title": {
+            "type": "plain_text",
+            "text": f"Ballot: {title}",
+            "emoji": True
+        },
+        "submit": {
+            "type": "plain_text",
+            "text": "Submit ballot",
+            "emoji": True
+        },
+        "close": {
+            "type": "plain_text",
+            "text": "Cancel",
+            "emoji": True
+        },
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "Rank your choices by clicking the buttons below. Your ballot will be private."
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": rankings_text
+            }
+            },
+            {
+                "type": "divider"
+            },
+            *[
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": option["text"],
+                                "emoji": True
+                            },
+                            "value": option["id"],
+                            "action_id": "select_option"
+                        }
+                    ]
+                }
+                for option in options
+            ],
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Clear ballot",
+                            "emoji": True
+                        },
+                        "style": "danger",
+                        "action_id": "clear_ballot" 
+                    }
+                ]
+            }
+        ]
+    }
+
+def create_ranked_choice_announcement(title: str, options: List[VotingOption], user_id: str, message_ts: str = None) -> List[Dict[str, Any]]:
+    """Create a public announcement message for a new vote."""
+    return [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": title,
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "A ranked choice vote has started! Click the button below to receive your ballot."
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Options:*\n" + "\n".join([f"• {option['text']}" for option in options])
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Request ballot",
+                        "emoji": True
+                    },
+                    "style": "primary",
+                    "action_id": "request_ballot",
+                    "value": message_ts or ""
+                }
+            ]
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"Started by <@{user_id}> • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                }
+            ]
+        }
+    ] 

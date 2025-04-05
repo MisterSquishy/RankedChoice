@@ -1,7 +1,9 @@
+import json
 import os
+import random
 import uuid
 from collections import Counter, defaultdict
-from typing import Callable, Dict, List, Optional, TypedDict, Union
+from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from dotenv import load_dotenv
 from slack_bolt import App
@@ -9,12 +11,13 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
 from slack_sdk.web import SlackResponse
 
-from blocks import (create_home_view, create_ranked_choice_prompt,
-                    create_submitted_message, update_rankings_message)
+from blocks import (create_home_view, create_ranked_choice_ballot,
+                    create_ranked_choice_prompt, create_submitted_message,
+                    update_rankings_message)
 from database import Database
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Define type hints for Slack payloads
 class SlackUser(TypedDict):
@@ -159,6 +162,13 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
         })
         return
     
+    # Find the poll description field
+    poll_description = ""
+    for block_id, block_data in view_state.items():
+        if "poll_description" in block_data:
+            poll_description = block_data["poll_description"]["value"]
+            break
+    
     # Find the poll options field
     poll_options_text = None
     for block_id, block_data in view_state.items():
@@ -207,7 +217,7 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     # Send the ranked choice voting prompt
     response = client.chat_postMessage(
         channel=channel_id,
-        blocks=create_ranked_choice_prompt(options, poll_title)
+        blocks=create_ranked_choice_prompt(options, poll_title, poll_description)
     )
     
     # Store the message timestamp and mark session as active
@@ -268,7 +278,7 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
     client.chat_postMessage(
         channel=channel_id,
         thread_ts=resp.data.get("ts", None),
-        text="Raw results:\n"+"\n".join([", ".join([option_map.get(option_id, option_id) for option_id in rankings]) for rankings in session_ballots.values()])
+        text="Anonymized results:\n"+"\n".join([f"Voter {i+1}: " + ", ".join([option_map.get(option_id, option_id) for option_id in rankings]) for i, rankings in enumerate(sorted(session_ballots.values(), key=lambda x: random.random()))])
     )
     
     # Mark session as inactive
@@ -311,9 +321,16 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     # Create a mapping of option IDs to their text
     option_map = {option["id"]: option["text"] for option in active_election["options"]}
     
+    resp = client.chat_postMessage(
+        channel=channel_id,
+        text=f"*{active_election['title']} - Current leader:*\n{option_map[result]}"
+    )
+
+    # Raw results
     client.chat_postMessage(
         channel=channel_id,
-        text=f"Current leader: *{active_election['title']} - Results:*\n{option_map[result]}"
+        thread_ts=resp.data.get("ts", None),
+        text="Anonymized results:\n"+"\n".join([f"Voter {i+1}: " + ", ".join([option_map.get(option_id, option_id) for option_id in rankings]) for i, rankings in enumerate(sorted(session_ballots.values(), key=lambda x: random.random()))])
     )
 
 # Handle show results button click
@@ -390,8 +407,9 @@ def handle_option_selection(ack: SlackAck, body: SlackBody, client: WebClient) -
     
     # Extract information from the action
     user_id = body["user"]["id"]
-    message_ts = body["container"]["message_ts"]
-    channel_id = body["container"]["channel_id"]
+    message_ts = body["view"]["private_metadata"]
+    vote = db.get_vote(message_ts)
+    channel_id = vote["channel_id"]
     selected_option_id = body["actions"][0]["value"]
     
     # Check if the ballot is already submitted
@@ -424,13 +442,13 @@ def handle_option_selection(ack: SlackAck, body: SlackBody, client: WebClient) -
     title = active_election["title"]
     
     # Update the message
-    client.chat_update(
-        channel=channel_id,
-        ts=message_ts,
-        blocks=update_rankings_message(
-            create_ranked_choice_prompt(options, title),
-            current_rankings,
-            options
+    client.views_update(
+        view_id=body["view"]["id"],
+        view=create_ranked_choice_ballot(
+            title,
+            options,
+            message_ts,
+            current_rankings
         )
     )
 
@@ -475,15 +493,16 @@ def handle_submit_rankings(ack: SlackAck, body: SlackBody, client: WebClient) ->
     )
 
 # Handle clear rankings button click
-@app.action("clear_rankings")
+@app.action("clear_ballot")
 def handle_clear_rankings(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
     print(f"[DEBUG] handle_clear_rankings: User {body['user']['id']} cleared rankings")
     ack()
     
     # Extract information from the action
     user_id = body["user"]["id"]
-    message_ts = body["container"]["message_ts"]
-    channel_id = body["container"]["channel_id"]
+    message_ts = body["view"]["private_metadata"]
+    vote = db.get_vote(message_ts)
+    channel_id = vote["channel_id"]
     
     # Check if the ballot is already submitted
     if db.is_ballot_submitted(message_ts, user_id):
@@ -505,13 +524,13 @@ def handle_clear_rankings(ack: SlackAck, body: SlackBody, client: WebClient) -> 
     title = active_election["title"]
     
     # Update the message
-    client.chat_update(
-        channel=channel_id,
-        ts=message_ts,
-        blocks=update_rankings_message(
-            create_ranked_choice_prompt(options, title),
-            [],
-            options
+    client.views_update(
+        view_id=body["view"]["id"],
+        view=create_ranked_choice_ballot(
+            title,
+            options,
+            message_ts,
+            []
         )
     )
 
@@ -593,6 +612,76 @@ def update_all_home_tabs(client: WebClient) -> None:
                 view=create_home_view(active_votes, all_ballots)
             )
     print(f"[DEBUG] update_all_home_tabs: Updated home tabs for {len(users['members'])} users")
+
+@app.action("request_ballot")
+def handle_request_ballot(ack: Any, body: Dict[str, Any], client: Any) -> None:
+    """Handle requesting a ballot."""
+    ack()
+    
+    user_id = body["user"]["id"]
+    message_ts = body["container"]["message_ts"]
+    channel_id = body["container"]["channel_id"]
+    
+    # Get the vote details
+    vote = db.get_vote(message_ts)
+    if not vote:
+        client.chat_postEphemeral(
+            channel=channel_id,
+            user=user_id,
+            text="This vote is no longer active."
+        )
+        return
+    
+    # Check if user already has a ballot
+    ballot = db.get_ballot(message_ts, user_id)
+    if ballot and ballot.get("is_submitted", False):
+        client.chat_postEphemeral(
+            channel=channel_id,
+            user=user_id,
+            text=f"You have already submitted your ballot for this vote.\n{'\n'.join([f'{i+1}. {next(opt["text"] for opt in vote["options"] if opt["id"] == option_id)}' for i, option_id in enumerate(ballot['rankings'])]) if ballot['rankings'] else 'No rankings'}"
+        )
+        return
+        
+    # Open the ballot modal
+    client.views_open(
+        trigger_id=body["trigger_id"],
+        view=create_ranked_choice_ballot(vote["title"], vote["options"], message_ts, ballot["rankings"] if ballot else None)
+    )
+
+@app.view("ballot_modal")
+def handle_ballot_submission(ack: Any, body: Dict[str, Any], client: Any) -> None:
+    """Handle the submission of a ballot from the modal."""
+    ack()
+    
+    user_id = body["user"]["id"]
+    message_ts = body["view"]["private_metadata"]
+    vote = db.get_vote(message_ts)
+    channel_id = vote["channel_id"]
+    
+    # Get the vote details
+    vote = db.get_vote(message_ts)
+    if not vote:
+        return
+    
+    # Check if user already has a ballot
+    ballot = db.get_ballot(message_ts, user_id)
+    if ballot and ballot.get("is_submitted", False):
+        client.chat_postEphemeral(
+            channel=channel_id,
+            user=user_id,
+            text=f"You have already submitted your ballot for this vote.\n{'\n'.join([f'{i+1}. {next(opt["text"] for opt in vote["options"] if opt["id"] == option_id)}' for i, option_id in enumerate(ballot['rankings'])]) if ballot['rankings'] else 'No rankings'}"
+        )
+        return
+    
+    # Mark the ballot as submitted
+    db.submit_ballot(message_ts, user_id)
+    
+    # Send a confirmation message
+    client.chat_postEphemeral(
+        channel=channel_id,
+        user=user_id,
+        text="Your ballot has been submitted successfully!"
+    )
 
 # Start the app
 if __name__ == "__main__":
