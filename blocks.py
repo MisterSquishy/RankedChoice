@@ -39,7 +39,7 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Your Rankings:*\nNo rankings yet"
+                "text": "*Your rankings:*\nNo rankings yet"
             }
         },
         {
@@ -49,7 +49,7 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Available Options:*"
+                "text": "*Available options:*"
             }
         },
         *[
@@ -170,7 +170,7 @@ def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": "🗳️ Ranked Choice Voting",
+                "text": "🗳️ Ranked choice voting",
                 "emoji": True
             }
         },
@@ -178,7 +178,7 @@ def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Welcome to the Ranked Choice Voting app! Use this tab to manage voting sessions."
+                "text": "Welcome to the RankedChoice voting app! Use this tab to manage voting sessions."
             }
         },
         {
@@ -188,7 +188,7 @@ def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Active Voting Sessions:*"
+                "text": "*Active voting sessions:*"
             }
         }
     ]
@@ -264,7 +264,7 @@ def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Start a New Voting Session:*"
+                "text": "*Start a new voting session:*"
             }
         },
         {
