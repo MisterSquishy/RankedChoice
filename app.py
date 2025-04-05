@@ -1,6 +1,6 @@
 import os
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Callable, Dict, List, Optional, TypedDict, Union
 
 from dotenv import load_dotenv
@@ -228,15 +228,22 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
     session_rankings = user_rankings[message_ts]
     
     # Calculate and display results
-    results = calculate_results(session_rankings)
+    result = calculate_irv_winner(session_rankings)
     
     # Create a mapping of option IDs to their text
     option_map = {option["id"]: option["text"] for option in options}
     
     # Post final results
+    resp = client.chat_postMessage(
+        channel=channel_id,
+        text=f"*{title} - Final result:*\n🏆 {option_map[result]} 🏆"
+    )
+
+    # Raw results
     client.chat_postMessage(
         channel=channel_id,
-        text=f"*{title} - Final Results:*\n" + "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)} - {count} votes" for idx, (option_id, count) in enumerate(results))
+        thread_ts=resp.data.get("ts", None),
+        text="Raw results:\n"+"\n".join([", ".join([option_map.get(option_id, option_id) for option_id in rankings]) for rankings in session_rankings.values()])
     )
     
     # Mark session as inactive
@@ -268,14 +275,14 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     session_rankings = user_rankings[message_ts]
     
     # Calculate and display results
-    results = calculate_results(session_rankings)
+    result = calculate_irv_winner(session_rankings)
     
     # Create a mapping of option IDs to their text
     option_map = {option["id"]: option["text"] for option in active_sessions[channel_id]["options"]}
     
     client.chat_postMessage(
         channel=channel_id,
-        text=f"*{active_sessions[channel_id]['title']} - Results:*\n" + "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)} - {count} votes" for idx, (option_id, count) in enumerate(results))
+        text=f"Current leader: *{active_sessions[channel_id]['title']} - Results:*\n{option_map[result]}"
     )
 
 # Handle option selection
@@ -400,24 +407,41 @@ def handle_delete_lowest_rank(ack: SlackAck, body: SlackBody, client: WebClient)
         )
     )
 
-def calculate_results(rankings: Dict[str, List[str]]) -> List[tuple]:
+def calculate_irv_winner(rankings: Dict[str, List[str]]) -> Optional[str]:
     """
-    Calculate the results of a voting session.
+    Calculates the winner using Instant Runoff Voting (IRV).
     
     Args:
-        rankings: Dictionary of user rankings (option IDs)
-        
-    Returns:
-        List of tuples (option_id, count) sorted by count
-    """
-    # Count first-choice votes
-    first_choice_counts = defaultdict(int)
-    for user_rankings in rankings.values():
-        if user_rankings:
-            first_choice_counts[user_rankings[0]] += 1
+        rankings: Dictionary of user rankings (option IDs in preference order)
     
-    # Sort by count
-    return sorted(first_choice_counts.items(), key=lambda x: x[1], reverse=True)
+    Returns:
+        The winning option_id or None if no winner
+    """
+    ballots = list(rankings.values())
+
+    while True:
+        # Count first-choice votes
+        counts = Counter()
+        for ballot in ballots:
+            if ballot:
+                counts[ballot[0]] += 1
+
+        total_votes = sum(counts.values())
+        if not total_votes:
+            return None  # No votes left
+
+        # Check for majority
+        for candidate, count in counts.items():
+            if count > total_votes / 2:
+                return candidate
+
+        # Find the candidate(s) with the fewest votes
+        min_count = min(counts.values())
+        to_eliminate = {c for c, count in counts.items() if count == min_count}
+
+        # Eliminate candidate(s) from all ballots
+        for ballot in ballots:
+            ballot[:] = [c for c in ballot if c not in to_eliminate]
 
 def update_all_home_tabs(client: WebClient) -> None:
     """
