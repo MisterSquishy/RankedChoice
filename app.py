@@ -10,7 +10,7 @@ from slack_sdk import WebClient
 from slack_sdk.web import SlackResponse
 
 from blocks import (create_home_view, create_ranked_choice_prompt,
-                    update_rankings_message)
+                    create_submitted_message, update_rankings_message)
 
 # Load environment variables
 load_dotenv()
@@ -341,8 +341,12 @@ def handle_submit_rankings(ack: SlackAck, body: SlackBody, client: WebClient) ->
         )
         return
     
-    # Create a mapping of option IDs to their text
-    option_map = {option["id"]: option["text"] for option in active_sessions[channel_id]["options"]}
+    title = active_sessions[channel_id]["title"]
+    client.chat_update(
+        channel=channel_id,
+        ts=message_ts,
+        blocks=create_submitted_message(title)
+    )
     
     # In a real app, you would save these rankings to a database
     client.chat_postMessage(

@@ -106,6 +106,25 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
         }
     ]
 
+def create_submitted_message(title: str = "Ranked Choice Voting") -> List[Dict[str, Any]]:
+    return [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"🗳️ {title}",
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "You voted! Thank you for doing your civic duty."
+            }
+        }
+    ]
+
 
 def update_rankings_message(blocks: List[Dict[str, Any]], rankings: List[str], options: List[VotingOption]) -> List[Dict[str, Any]]:
     """
