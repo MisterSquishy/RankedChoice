@@ -106,7 +106,7 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
         }
     ]
 
-def create_submitted_message(title: str = "Ranked Choice Voting") -> List[Dict[str, Any]]:
+def create_submitted_message(user_id: str, title: str = "Ranked choice voting") -> List[Dict[str, Any]]:
     return [
         {
             "type": "header",
@@ -120,7 +120,7 @@ def create_submitted_message(title: str = "Ranked Choice Voting") -> List[Dict[s
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "You voted! Thank you for doing your civic duty."
+                "text": f"<@{user_id}> voted! Thank you for doing your civic duty 🫡"
             }
         }
     ]

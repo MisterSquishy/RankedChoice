@@ -30,7 +30,7 @@
   },
   "settings": {
     "event_subscriptions": {
-      "request_url": "https://d788-75-67-241-13.ngrok-free.app/slack/events",
+      "request_url": "https://6579-2600-4040-539a-9400-c549-38e6-fd9d-7cdb.ngrok-free.app/slack/events",
       "bot_events": [
         "app_mention",
         "app_home_opened",
@@ -42,7 +42,7 @@
     },
     "interactivity": {
       "is_enabled": true,
-      "request_url": "https://d788-75-67-241-13.ngrok-free.app/slack/events"
+      "request_url": "https://6579-2600-4040-539a-9400-c549-38e6-fd9d-7cdb.ngrok-free.app/slack/events"
     }
   }
 }
