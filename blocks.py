@@ -387,6 +387,8 @@ def create_ranked_choice_ballot(title: str, options: List[VotingOption], message
 
 def create_ranked_choice_announcement(title: str, options: List[VotingOption], user_id: str, message_ts: str = None) -> List[Dict[str, Any]]:
     """Create a public announcement message for a new vote."""
+    options_text = "\n".join([f"• {option['text']}" for option in options])
+    
     return [
         {
             "type": "header",
@@ -407,7 +409,7 @@ def create_ranked_choice_announcement(title: str, options: List[VotingOption], u
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Options:*\n" + "\n".join([f"• {option['text']}" for option in options])
+                "text": f"*Options:*\n{options_text}"
             }
         },
         {

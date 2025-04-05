@@ -635,10 +635,19 @@ def handle_request_ballot(ack: Any, body: Dict[str, Any], client: Any) -> None:
     # Check if user already has a ballot
     ballot = db.get_ballot(message_ts, user_id)
     if ballot and ballot.get("is_submitted", False):
+        # Create rankings text
+        rankings_text = "No rankings"
+        if ballot["rankings"]:
+            rankings_lines = []
+            for i, option_id in enumerate(ballot["rankings"]):
+                option_text = next(opt["text"] for opt in vote["options"] if opt["id"] == option_id)
+                rankings_lines.append(f"{i+1}. {option_text}")
+            rankings_text = "\n".join(rankings_lines)
+        
         client.chat_postEphemeral(
             channel=channel_id,
             user=user_id,
-            text=f"You have already submitted your ballot for this vote.\n{'\n'.join([f'{i+1}. {next(opt["text"] for opt in vote["options"] if opt["id"] == option_id)}' for i, option_id in enumerate(ballot['rankings'])]) if ballot['rankings'] else 'No rankings'}"
+            text=f"You have already submitted your ballot for this vote.\n{rankings_text}"
         )
         return
         
@@ -666,10 +675,19 @@ def handle_ballot_submission(ack: Any, body: Dict[str, Any], client: Any) -> Non
     # Check if user already has a ballot
     ballot = db.get_ballot(message_ts, user_id)
     if ballot and ballot.get("is_submitted", False):
+        # Create rankings text
+        rankings_text = "No rankings"
+        if ballot["rankings"]:
+            rankings_lines = []
+            for i, option_id in enumerate(ballot["rankings"]):
+                option_text = next(opt["text"] for opt in vote["options"] if opt["id"] == option_id)
+                rankings_lines.append(f"{i+1}. {option_text}")
+            rankings_text = "\n".join(rankings_lines)
+        
         client.chat_postEphemeral(
             channel=channel_id,
             user=user_id,
-            text=f"You have already submitted your ballot for this vote.\n{'\n'.join([f'{i+1}. {next(opt["text"] for opt in vote["options"] if opt["id"] == option_id)}' for i, option_id in enumerate(ballot['rankings'])]) if ballot['rankings'] else 'No rankings'}"
+            text=f"You have already submitted your ballot for this vote.\n{rankings_text}"
         )
         return
     
