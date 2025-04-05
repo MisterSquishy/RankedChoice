@@ -168,7 +168,7 @@ def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, 
                             "type": "button",
                             "text": {
                                 "type": "plain_text",
-                                "text": "Show current results",
+                                "text": "Post current results",
                                 "emoji": True
                             },
                             "value": channel_id,
