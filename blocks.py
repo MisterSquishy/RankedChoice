@@ -87,15 +87,6 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": "Delete last choice",
-                        "emoji": True
-                    },
-                    "action_id": "delete_lowest_rank"
-                },
-                {
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
                         "text": "Clear",
                         "emoji": True
                     },
@@ -106,16 +97,8 @@ def create_ranked_choice_prompt(options: List[VotingOption], title: str = "Ranke
         }
     ]
 
-def create_submitted_message(user_id: str, title: str = "Ranked choice voting") -> List[Dict[str, Any]]:
+def create_submitted_message(user_id: str) -> List[Dict[str, Any]]:
     return [
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": f"🗳️ {title}",
-                "emoji": True
-            }
-        },
         {
             "type": "section",
             "text": {
@@ -143,8 +126,8 @@ def update_rankings_message(blocks: List[Dict[str, Any]], rankings: List[str], o
     
     # Find the rankings section and update it
     for block in blocks:
-        if block.get("type") == "section" and "Your Rankings:" in block["text"]["text"]:
-            rankings_text = "*Your Rankings:*\n"
+        if block.get("type") == "section" and "Your rankings:" in block["text"]["text"]:
+            rankings_text = "*Your rankings:*\n"
             if rankings:
                 rankings_text += "\n".join(f"{idx + 1}. {option_map.get(option_id, option_id)}" for idx, option_id in enumerate(rankings))
             else:
@@ -155,22 +138,23 @@ def update_rankings_message(blocks: List[Dict[str, Any]], rankings: List[str], o
     return blocks
 
 
-def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str, Dict[str, List[str]]]) -> Dict[str, Any]:
+def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, Dict[str, List[str]]]) -> Dict[str, Any]:
     """
     Create the home tab view.
     
     Args:
         active_votes: List of active voting sessions
-        
+        all_ballots: Dictionary of all submitted ballots by message timestamp
+    
     Returns:
-        Dict containing the view definition
+        The home tab view blocks
     """
     blocks = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": "🗳️ Ranked choice voting",
+                "text": "Ranked Choice Voting",
                 "emoji": True
             }
         },
@@ -178,7 +162,7 @@ def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Welcome to the RankedChoice voting app! Use this tab to manage voting sessions."
+                "text": "Welcome to the RankedChoice app! Use this app to create and participate in ranked choice voting polls."
             }
         },
         {
@@ -188,74 +172,86 @@ def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Active voting sessions:*"
+                "text": "*Active elections*"
             }
         }
     ]
     
-    # Add active voting sessions
-    if active_votes:
-        for vote in active_votes:
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Channel:* #{vote['channel_name']}"
-                }
-            })
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Submitted ballots:* {len(user_rankings.get(vote['message_ts'], []))}"
-                }
-            })
-            blocks.append({
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Stop voting",
-                            "emoji": True
-                        },
-                        "style": "danger",
-                        "action_id": "stop_voting",
-                        "value": vote["channel_id"]
-                    },
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Show current results",
-                            "emoji": True
-                        },
-                        "action_id": "show_results",
-                        "value": vote["channel_id"]
-                    },
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Bump",
-                            "emoji": True
-                        },
-                        "action_id": "bump",
-                        "value": vote["channel_id"]
-                    },
-                ]
-            })
-    else:
+    if not active_votes:
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "No active voting sessions."
+                "text": "No active elections."
             }
         })
+    else:
+        for vote in active_votes:
+            channel_id = vote["channel_id"]
+            channel_name = vote["channel_name"]
+            message_ts = vote["message_ts"]
+            title = vote["title"]
+            
+            # Count submitted ballots for this session
+            session_ballots = all_ballots.get(message_ts, {})
+            submitted_count = sum(1 for ballot in session_ballots.values() if ballot)
+            
+            blocks.extend([
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*#{channel_name}*: {title}\n{submitted_count} ballot(s) submitted"
+                    }
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "Close the poll",
+                                "emoji": True
+                            },
+                            "value": channel_id,
+                            "action_id": "stop_voting",
+                            "style": "danger"
+                        },
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "Show current results",
+                                "emoji": True
+                            },
+                            "value": f"{channel_id}|{title}",
+                            "action_id": "show_results"
+                        },
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "Bump",
+                                "emoji": True
+                            },
+                            "value": channel_id,
+                            "action_id": "bump"
+                        },
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "Cancel",
+                                "emoji": True
+                            },
+                            "value": channel_id,
+                            "action_id": "cancel"
+                        }
+                    ]
+                }
+            ])
     
-    # Add start voting section
     blocks.extend([
         {
             "type": "divider"
@@ -264,7 +260,40 @@ def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Start a new voting session:*"
+                "text": "*Start a New Vote*"
+            }
+        },
+        {
+            "type": "input",
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "poll_title",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Enter poll title"
+                }
+            },
+            "label": {
+                "type": "plain_text",
+                "text": "Poll Title",
+                "emoji": True
+            }
+        },
+        {
+            "type": "input",
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "poll_options",
+                "multiline": True,
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Enter options (one per line)"
+                }
+            },
+            "label": {
+                "type": "plain_text",
+                "text": "Poll Options",
+                "emoji": True
             }
         },
         {
@@ -281,41 +310,6 @@ def create_home_view(active_votes: List[Dict[str, str]], user_rankings: Dict[str
             "label": {
                 "type": "plain_text",
                 "text": "Channel",
-                "emoji": True
-            }
-        },
-        {
-            "type": "input",
-            "element": {
-                "type": "plain_text_input",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Enter poll title (e.g., 'Team Lunch Options')",
-                    "emoji": True
-                },
-                "action_id": "poll_title"
-            },
-            "label": {
-                "type": "plain_text",
-                "text": "Poll Title",
-                "emoji": True
-            }
-        },
-        {
-            "type": "input",
-            "element": {
-                "type": "plain_text_input",
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Enter options (one per line)",
-                    "emoji": True
-                },
-                "multiline": True,
-                "action_id": "poll_options"
-            },
-            "label": {
-                "type": "plain_text",
-                "text": "Poll Options",
                 "emoji": True
             }
         },

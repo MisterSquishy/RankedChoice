@@ -70,26 +70,26 @@ def handle_app_home_opened(event: SlackEvent, client: WebClient) -> None:
     active_votes = []
     
     # Get all active sessions from the database
-    all_sessions = db.get_all_active_sessions()
-    print(f"[DEBUG] all_sessions: {all_sessions}")
+    all_elections = db.get_all_active_elections()
     
-    for channel_id, session in all_sessions.items():
+    for channel_id, session in all_elections.items():
         if session["is_active"]:
             channel_info = client.conversations_info(channel=channel_id)
             channel_name = channel_info["channel"]["name"]
             active_votes.append({
                 "channel_id": channel_id,
                 "channel_name": channel_name,
-                "message_ts": session["message_ts"]
+                "message_ts": session["message_ts"],
+                "title": session["title"]
             })
     
-    # Get all user rankings from the database
-    all_rankings = db.get_all_user_rankings()
+    # Get all submitted ballots from the database
+    all_ballots = db.get_all_ballots()
     
     # Update the home tab
     client.views_publish(
         user_id=user_id,
-        view=create_home_view(active_votes, all_rankings)
+        view=create_home_view(active_votes, all_ballots)
     )
 
 # Handle channel selection
@@ -102,15 +102,15 @@ def handle_channel_select(ack: SlackAck, body: SlackBody, client: WebClient) -> 
     channel_id = body["actions"][0]["selected_channel"]
     
     # Get all active sessions from the database
-    all_sessions = db.get_all_active_sessions()
+    all_elections = db.get_all_active_elections()
     
-    # Get all user rankings from the database
-    all_rankings = db.get_all_user_rankings()
+    # Get all submitted ballots from the database
+    all_ballots = db.get_all_ballots()
     
     # Update the home view
     client.views_update(
         view_id=body["view"]["id"],
-        view=create_home_view(all_sessions, all_rankings)
+        view=create_home_view(all_elections, all_ballots)
     )
 
 # Handle start voting button click
@@ -127,8 +127,11 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
         return
     
     # Get the channel ID
-    channel_block_id = next(iter(body["view"]["state"]["values"]))
-    channel_id = body["view"]["state"]["values"][channel_block_id]["channel_select"]["selected_channel"]
+    channel_id = None
+    for block_id, block_data in body["view"]["state"]["values"].items():
+        if "channel_select" in block_data:
+            channel_id = block_data["channel_select"]["selected_channel"]
+            break
     
     if not channel_id:
         print(f"[DEBUG] handle_start_voting: No channel selected")
@@ -189,8 +192,8 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
         options.append({"id": option_id, "text": text})
     
     # Check if there's already an active session in this channel
-    active_session = db.get_active_session(channel_id)
-    if active_session and active_session["is_active"]:
+    active_election = db.get_active_election(channel_id)
+    if active_election and active_election["is_active"]:
         print(f"[DEBUG] handle_start_voting: Active session already exists in channel {channel_id}")
         ack({
             "response_type": "ephemeral",
@@ -215,7 +218,7 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
         "title": poll_title,
         "options": options
     }
-    db.set_active_session(channel_id, session)
+    db.set_active_election(channel_id, session)
     print(f"[DEBUG] handle_start_voting: Created new session in channel {channel_id} with message_ts {message_ts}")
     
     # Update the home tab for all users
@@ -231,8 +234,8 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
     channel_id = body["actions"][0]["value"]
     
     # Check if there's an active session in this channel
-    active_session = db.get_active_session(channel_id)
-    if not active_session or not active_session["is_active"]:
+    active_election = db.get_active_election(channel_id)
+    if not active_election or not active_election["is_active"]:
         print(f"[DEBUG] handle_stop_voting: No active session in channel {channel_id}")
         client.chat_postMessage(
             channel=channel_id,
@@ -241,16 +244,16 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
         return
     
     # Get the message timestamp and session info
-    message_ts = active_session["message_ts"]
-    title = active_session["title"]
-    options = active_session["options"]
+    message_ts = active_election["message_ts"]
+    title = active_election["title"]
+    options = active_election["options"]
     
-    # Get all rankings for this session
-    session_rankings = db.get_user_rankings(message_ts)
-    print(f"[DEBUG] handle_stop_voting: Found {len(session_rankings)} user rankings for session {message_ts}")
+    # Get all submitted ballots for this session
+    session_ballots = db.get_ballots(message_ts)
+    print(f"[DEBUG] handle_stop_voting: Found {len(session_ballots)} submitted ballots for session {message_ts}")
     
     # Calculate and display results
-    result = calculate_irv_winner(session_rankings)
+    result = calculate_irv_winner(session_ballots)
     
     # Create a mapping of option IDs to their text
     option_map = {option["id"]: option["text"] for option in options}
@@ -265,12 +268,12 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
     client.chat_postMessage(
         channel=channel_id,
         thread_ts=resp.data.get("ts", None),
-        text="Raw results:\n"+"\n".join([", ".join([option_map.get(option_id, option_id) for option_id in rankings]) for rankings in session_rankings.values()])
+        text="Raw results:\n"+"\n".join([", ".join([option_map.get(option_id, option_id) for option_id in rankings]) for rankings in session_ballots.values()])
     )
     
     # Mark session as inactive
-    active_session["is_active"] = False
-    db.set_active_session(channel_id, active_session)
+    active_election["is_active"] = False
+    db.set_active_election(channel_id, active_election)
     print(f"[DEBUG] handle_stop_voting: Marked session in channel {channel_id} as inactive")
     
     # Update the home tab for all users
@@ -286,8 +289,8 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     channel_id = body["actions"][0]["value"]
     
     # Check if there's an active session in this channel
-    active_session = db.get_active_session(channel_id)
-    if not active_session or not active_session["is_active"]:
+    active_election = db.get_active_election(channel_id)
+    if not active_election or not active_election["is_active"]:
         print(f"[DEBUG] handle_show_results: No active session in channel {channel_id}")
         client.chat_postMessage(
             channel=channel_id,
@@ -296,21 +299,21 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
         return
     
     # Get the message timestamp
-    message_ts = active_session["message_ts"]
+    message_ts = active_election["message_ts"]
     
-    # Get all rankings for this session
-    session_rankings = db.get_user_rankings(message_ts)
-    print(f"[DEBUG] handle_show_results: Found {len(session_rankings)} user rankings for session {message_ts}")
+    # Get all submitted ballots for this session
+    session_ballots = db.get_ballots(message_ts)
+    print(f"[DEBUG] handle_show_results: Found {len(session_ballots)} submitted ballots for session {message_ts}")
     
     # Calculate and display results
-    result = calculate_irv_winner(session_rankings)
+    result = calculate_irv_winner(session_ballots)
     
     # Create a mapping of option IDs to their text
-    option_map = {option["id"]: option["text"] for option in active_session["options"]}
+    option_map = {option["id"]: option["text"] for option in active_election["options"]}
     
     client.chat_postMessage(
         channel=channel_id,
-        text=f"Current leader: *{active_session['title']} - Results:*\n{option_map[result]}"
+        text=f"Current leader: *{active_election['title']} - Results:*\n{option_map[result]}"
     )
 
 # Handle show results button click
@@ -323,8 +326,8 @@ def handle_bump(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
     channel_id = body["actions"][0]["value"]
     
     # Check if there's an active session in this channel
-    active_session = db.get_active_session(channel_id)
-    if not active_session or not active_session["is_active"]:
+    active_election = db.get_active_election(channel_id)
+    if not active_election or not active_election["is_active"]:
         print(f"[DEBUG] handle_bump: No active session in channel {channel_id}")
         client.chat_postMessage(
             channel=channel_id,
@@ -333,7 +336,7 @@ def handle_bump(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
         return
     
     # Get the message timestamp
-    message_ts = active_session["message_ts"]
+    message_ts = active_election["message_ts"]
     
     client.chat_postMessage(
         channel=channel_id,
@@ -342,6 +345,42 @@ def handle_bump(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
         text="Don't forget to vote!"
     )
     print(f"[DEBUG] handle_bump: Sent bump message for session {message_ts} in channel {channel_id}")
+
+# Handle show results button click
+@app.action("cancel")
+def handle_cancel(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
+    print(f"[DEBUG] handle_cancel: User {body['user']['id']} clicked cancel")
+    ack()
+    
+    # Get the selected channel
+    channel_id = body["actions"][0]["value"]
+    
+    # Check if there's an active session in this channel
+    active_election = db.get_active_election(channel_id)
+    if not active_election or not active_election["is_active"]:
+        print(f"[DEBUG] handle_cancel: No active session in channel {channel_id}")
+        client.chat_postMessage(
+            channel=channel_id,
+            text="There is no active voting session in this channel."
+        )
+        return
+    
+    # Mark session as inactive
+    active_election["is_active"] = False
+    db.set_active_election(channel_id, active_election)
+    
+    # Get the message timestamp
+    message_ts = active_election["message_ts"]
+    
+    client.chat_postMessage(
+        channel=channel_id,
+        thread_ts=message_ts,
+        reply_broadcast=True,
+        text=f"<@{body['user']['id']}> cancelled the election"
+    )
+    print(f"[DEBUG] handle_cancel: Sent bump message for session {message_ts} in channel {channel_id}")
+    
+    update_all_home_tabs(client)
 
 # Handle option selection
 @app.action("select_option")
@@ -355,9 +394,19 @@ def handle_option_selection(ack: SlackAck, body: SlackBody, client: WebClient) -
     channel_id = body["container"]["channel_id"]
     selected_option_id = body["actions"][0]["value"]
     
-    # Get current rankings for this user
-    session_rankings = db.get_user_rankings(message_ts)
-    current_rankings = session_rankings.get(user_id, [])
+    # Check if the ballot is already submitted
+    if db.is_ballot_submitted(message_ts, user_id):
+        print(f"[DEBUG] handle_option_selection: User {user_id} tried to modify a submitted ballot")
+        client.chat_postEphemeral(
+            channel=channel_id,
+            user=user_id,
+            thread_ts=message_ts,
+            text=f"<@{user_id}> Your ballot has already been submitted. You cannot modify it."
+        )
+        return
+    
+    # Get current ballot for this user
+    current_rankings = db.get_user_ballot(message_ts, user_id) or []
     
     # Check if option is already ranked
     if selected_option_id in current_rankings:
@@ -366,13 +415,13 @@ def handle_option_selection(ack: SlackAck, body: SlackBody, client: WebClient) -
     
     # Add the option to rankings
     current_rankings.append(selected_option_id)
-    db.set_user_rankings(message_ts, user_id, current_rankings)
-    print(f"[DEBUG] handle_option_selection: Added option {selected_option_id} to rankings for user {user_id}")
+    db.set_ballot(message_ts, user_id, current_rankings, is_submitted=False)
+    print(f"[DEBUG] handle_option_selection: Added option {selected_option_id} to ballot for user {user_id}")
     
     # Get the options for this session
-    active_session = db.get_active_session(channel_id)
-    options = active_session["options"]
-    title = active_session["title"]
+    active_election = db.get_active_election(channel_id)
+    options = active_election["options"]
+    title = active_election["title"]
     
     # Update the message
     client.chat_update(
@@ -396,13 +445,27 @@ def handle_submit_rankings(ack: SlackAck, body: SlackBody, client: WebClient) ->
     message_ts = body["container"]["message_ts"]
     channel_id = body["container"]["channel_id"]
     
-    # Get current rankings for this user
-    session_rankings = db.get_user_rankings(message_ts)
-    current_rankings = session_rankings.get(user_id, [])
+    # Check if the ballot is already submitted
+    if db.is_ballot_submitted(message_ts, user_id):
+        print(f"[DEBUG] handle_submit_rankings: User {user_id} tried to submit an already submitted ballot")
+        client.chat_postEphemeral(
+            channel=channel_id,
+            user=user_id,
+            thread_ts=message_ts,
+            text=f"<@{user_id}> You have already submitted your ballot."
+        )
+        return
+    
+    # Get current ballot for this user
+    current_rankings = db.get_user_ballot(message_ts, user_id) or []
     
     # Get the options for this session
-    active_session = db.get_active_session(channel_id)
-    options = active_session["options"]
+    active_election = db.get_active_election(channel_id)
+    options = active_election["options"]
+    
+    # Mark the ballot as submitted
+    db.submit_ballot(message_ts, user_id)
+    print(f"[DEBUG] handle_submit_rankings: User {user_id} successfully submitted ballot")
     
     # Send confirmation message
     client.chat_postMessage(
@@ -410,7 +473,6 @@ def handle_submit_rankings(ack: SlackAck, body: SlackBody, client: WebClient) ->
         thread_ts=message_ts,
         blocks=create_submitted_message(user_id)
     )
-    print(f"[DEBUG] handle_submit_rankings: User {user_id} successfully submitted rankings")
 
 # Handle clear rankings button click
 @app.action("clear_rankings")
@@ -423,14 +485,24 @@ def handle_clear_rankings(ack: SlackAck, body: SlackBody, client: WebClient) -> 
     message_ts = body["container"]["message_ts"]
     channel_id = body["container"]["channel_id"]
     
-    # Clear rankings for this user
-    db.clear_user_rankings(message_ts, user_id)
-    print(f"[DEBUG] handle_clear_rankings: Cleared rankings for user {user_id} in session {message_ts}")
+    # Check if the ballot is already submitted
+    if db.is_ballot_submitted(message_ts, user_id):
+        print(f"[DEBUG] handle_clear_rankings: User {user_id} tried to clear a submitted ballot")
+        client.chat_postMessage(
+            channel=channel_id,
+            thread_ts=message_ts,
+            text=f"<@{user_id}> Your ballot has already been submitted. You cannot clear it."
+        )
+        return
+    
+    # Clear ballot for this user
+    db.clear_ballot(message_ts, user_id)
+    print(f"[DEBUG] handle_clear_rankings: Cleared ballot for user {user_id} in session {message_ts}")
     
     # Get the options for this session
-    active_session = db.get_active_session(channel_id)
-    options = active_session["options"]
-    title = active_session["title"]
+    active_election = db.get_active_election(channel_id)
+    options = active_election["options"]
+    title = active_election["title"]
     
     # Update the message
     client.chat_update(
@@ -495,21 +567,22 @@ def update_all_home_tabs(client: WebClient) -> None:
     users = client.users_list()
     
     # Get active voting sessions from the database
-    all_sessions = db.get_all_active_sessions()
+    all_elections = db.get_all_active_elections()
     
-    # Get all user rankings from the database
-    all_rankings = db.get_all_user_rankings()
+    # Get all submitted ballots from the database
+    all_ballots = db.get_all_ballots()
     
     # Get active voting sessions
     active_votes = []
-    for channel_id, session in all_sessions.items():
+    for channel_id, session in all_elections.items():
         if session["is_active"]:
             channel_info = client.conversations_info(channel=channel_id)
             channel_name = channel_info["channel"]["name"]
             active_votes.append({
                 "channel_id": channel_id,
                 "channel_name": channel_name,
-                "message_ts": session["message_ts"]
+                "message_ts": session["message_ts"],
+                "title": session["title"]
             })
     
     # Update each user's home tab
@@ -517,7 +590,7 @@ def update_all_home_tabs(client: WebClient) -> None:
         if not user["is_bot"] and not user["deleted"]:
             client.views_publish(
                 user_id=user["id"],
-                view=create_home_view(active_votes, all_rankings)
+                view=create_home_view(active_votes, all_ballots)
             )
     print(f"[DEBUG] update_all_home_tabs: Updated home tabs for {len(users['members'])} users")
 

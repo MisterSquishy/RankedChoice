@@ -23,9 +23,9 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
-            # Create active_sessions table
+            # Create elections table
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS active_sessions (
+                CREATE TABLE IF NOT EXISTS elections (
                     channel_id TEXT PRIMARY KEY,
                     is_active BOOLEAN,
                     message_ts TEXT,
@@ -34,24 +34,25 @@ class Database:
                 )
             """)
             
-            # Create user_rankings table
+            # Create ballots table (renamed from user_rankings)
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS user_rankings (
+                CREATE TABLE IF NOT EXISTS ballots (
                     message_ts TEXT,
                     user_id TEXT,
                     rankings TEXT,
+                    is_submitted BOOLEAN,
                     PRIMARY KEY (message_ts, user_id)
                 )
             """)
             
             conn.commit()
 
-    def get_active_session(self, channel_id: str) -> Optional[PollSession]:
+    def get_active_election(self, channel_id: str) -> Optional[PollSession]:
         """Get active session for a channel."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT is_active, message_ts, title, options FROM active_sessions WHERE channel_id = ?",
+                "SELECT is_active, message_ts, title, options FROM elections WHERE channel_id = ?",
                 (channel_id,)
             )
             result = cursor.fetchone()
@@ -66,11 +67,11 @@ class Database:
                 }
             return None
 
-    def get_all_active_sessions(self) -> Dict[str, PollSession]:
+    def get_all_active_elections(self) -> Dict[str, PollSession]:
         """Get all active sessions."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT channel_id, is_active, message_ts, title, options FROM active_sessions")
+            cursor.execute("SELECT channel_id, is_active, message_ts, title, options FROM elections")
             results = cursor.fetchall()
             
             sessions = {}
@@ -83,13 +84,13 @@ class Database:
                 }
             return sessions
 
-    def set_active_session(self, channel_id: str, session: PollSession) -> None:
+    def set_active_election(self, channel_id: str, session: PollSession) -> None:
         """Set active session for a channel."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO active_sessions 
+                INSERT OR REPLACE INTO elections 
                 (channel_id, is_active, message_ts, title, options)
                 VALUES (?, ?, ?, ?, ?)
                 """,
@@ -103,55 +104,94 @@ class Database:
             )
             conn.commit()
 
-    def get_user_rankings(self, message_ts: str) -> Dict[str, List[str]]:
-        """Get all user rankings for a message."""
+    def get_ballots(self, message_ts: str) -> Dict[str, List[str]]:
+        """Get all submitted ballots for a message."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT user_id, rankings FROM user_rankings WHERE message_ts = ?",
+                "SELECT user_id, rankings FROM ballots WHERE message_ts = ? AND is_submitted = 1",
                 (message_ts,)
             )
             results = cursor.fetchall()
             
-            rankings = {}
+            ballots = {}
             for user_id, rankings_json in results:
-                rankings[user_id] = json.loads(rankings_json)
-            return rankings
+                ballots[user_id] = json.loads(rankings_json)
+            return ballots
 
-    def get_all_user_rankings(self) -> Dict[str, Dict[str, List[str]]]:
-        """Get all user rankings for all messages."""
+    def get_all_ballots(self) -> Dict[str, Dict[str, List[str]]]:
+        """Get all submitted ballots for all messages."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT message_ts, user_id, rankings FROM user_rankings")
+            cursor.execute("SELECT message_ts, user_id, rankings FROM ballots WHERE is_submitted = 1")
             results = cursor.fetchall()
             
-            all_rankings = {}
+            all_ballots = {}
             for message_ts, user_id, rankings_json in results:
-                if message_ts not in all_rankings:
-                    all_rankings[message_ts] = {}
-                all_rankings[message_ts][user_id] = json.loads(rankings_json)
-            return all_rankings
+                if message_ts not in all_ballots:
+                    all_ballots[message_ts] = {}
+                all_ballots[message_ts][user_id] = json.loads(rankings_json)
+            return all_ballots
 
-    def set_user_rankings(self, message_ts: str, user_id: str, rankings: List[str]) -> None:
-        """Set rankings for a user and message."""
+    def get_user_ballot(self, message_ts: str, user_id: str) -> Optional[List[str]]:
+        """Get a user's ballot for a message, whether submitted or not."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT rankings, is_submitted FROM ballots WHERE message_ts = ? AND user_id = ?",
+                (message_ts, user_id)
+            )
+            result = cursor.fetchone()
+            
+            if result:
+                rankings_json, is_submitted = result
+                return json.loads(rankings_json)
+            return None
+
+    def is_ballot_submitted(self, message_ts: str, user_id: str) -> bool:
+        """Check if a user's ballot is submitted."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT is_submitted FROM ballots WHERE message_ts = ? AND user_id = ?",
+                (message_ts, user_id)
+            )
+            result = cursor.fetchone()
+            
+            if result:
+                return bool(result[0])
+            return False
+
+    def set_ballot(self, message_ts: str, user_id: str, rankings: List[str], is_submitted: bool = False) -> None:
+        """Set a user's ballot for a message."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO user_rankings 
-                (message_ts, user_id, rankings)
-                VALUES (?, ?, ?)
+                INSERT OR REPLACE INTO ballots 
+                (message_ts, user_id, rankings, is_submitted)
+                VALUES (?, ?, ?, ?)
                 """,
-                (message_ts, user_id, json.dumps(rankings))
+                (message_ts, user_id, json.dumps(rankings), is_submitted)
             )
             conn.commit()
 
-    def clear_user_rankings(self, message_ts: str, user_id: str) -> None:
-        """Clear rankings for a user and message."""
+    def submit_ballot(self, message_ts: str, user_id: str) -> None:
+        """Mark a user's ballot as submitted."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM user_rankings WHERE message_ts = ? AND user_id = ?",
+                "UPDATE ballots SET is_submitted = 1 WHERE message_ts = ? AND user_id = ?",
+                (message_ts, user_id)
+            )
+            conn.commit()
+
+    def clear_ballot(self, message_ts: str, user_id: str) -> None:
+        """Clear a user's ballot for a message."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM ballots WHERE message_ts = ? AND user_id = ?",
                 (message_ts, user_id)
             )
             conn.commit() 
