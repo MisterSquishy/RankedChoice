@@ -17,7 +17,7 @@ from blocks import (create_home_view, create_ranked_choice_ballot,
 from database import Database
 
 # Load environment variables
-load_dotenv(override=True)
+load_dotenv()
 
 # Define type hints for Slack payloads
 class SlackUser(TypedDict):

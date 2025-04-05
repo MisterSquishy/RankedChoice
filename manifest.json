@@ -30,7 +30,7 @@
   },
   "settings": {
     "event_subscriptions": {
-      "request_url": "https://rankedchoice.onrender.com/slack/events",
+      "request_url": "https://rankedchoice.fly.dev/slack/events",
       "bot_events": [
         "app_mention",
         "app_home_opened",
@@ -42,7 +42,7 @@
     },
     "interactivity": {
       "is_enabled": true,
-      "request_url": "https://rankedchoice.onrender.com/slack/events"
+      "request_url": "https://rankedchoice.fly.dev/slack/events"
     }
   }
 }
