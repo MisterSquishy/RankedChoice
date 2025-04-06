@@ -2,22 +2,18 @@ import json
 import os
 import random
 import uuid
-from collections import Counter, defaultdict
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
+from collections import Counter
+from typing import Any, Dict, List, Optional, TypedDict
 
 from dotenv import load_dotenv
-from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_bolt import App, Say
 from slack_sdk import WebClient
-from slack_sdk.web import SlackResponse
 
 from blocks import (create_home_view, create_ranked_choice_ballot,
-                    create_ranked_choice_prompt, create_submitted_message,
-                    update_rankings_message)
+                    create_ranked_choice_prompt, create_submitted_message)
 from database import Database
 
 # Load environment variables
-# fixme needs override=True locally only
 load_dotenv()
 
 # Define type hints for Slack payloads
@@ -61,7 +57,7 @@ db = Database()
 
 # Message listener that responds to "hello"
 @app.message("hello")
-def message_hello(message: Dict[str, str], say: Callable[[str], None]) -> None:
+def message_hello(message: Dict[str, str], say: Say) -> None:
     print(f"[DEBUG] message_hello: User {message['user']} said hello")
     say(f"Hey there <@{message['user']}>! 👋")
 
@@ -216,9 +212,10 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     ack()
     
     # Send the ranked choice voting prompt
+    resp = client.users_info(user=body["user"]["id"])
     response = client.chat_postMessage(
         channel=channel_id,
-        blocks=create_ranked_choice_prompt(options, poll_title, poll_description)
+        blocks=create_ranked_choice_prompt(resp["user"]["profile"]["display_name"], poll_title, poll_description)
     )
     
     # Store the message timestamp and mark session as active
@@ -248,10 +245,6 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
     active_election = db.get_active_election(channel_id)
     if not active_election or not active_election["is_active"]:
         print(f"[DEBUG] handle_stop_voting: No active session in channel {channel_id}")
-        client.chat_postMessage(
-            channel=channel_id,
-            text="There is no active voting session in this channel."
-        )
         return
     
     # Get the message timestamp and session info
@@ -262,6 +255,10 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
     # Get all submitted ballots for this session
     session_ballots = db.get_ballots(message_ts)
     print(f"[DEBUG] handle_stop_voting: Found {len(session_ballots)} submitted ballots for session {message_ts}")
+
+    if len(session_ballots) == 0:
+        print(f"[DEBUG] handle_stop_voting: No ballots, returning")
+        return
     
     # Calculate and display results
     [result, rounds] = calculate_irv_winner(session_ballots)
@@ -324,6 +321,10 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     # Get all submitted ballots for this session
     session_ballots = db.get_ballots(message_ts)
     print(f"[DEBUG] handle_show_results: Found {len(session_ballots)} submitted ballots for session {message_ts}")
+
+    if len(session_ballots) == 0:
+        print(f"[DEBUG] handle_show_results: No ballots, returning")
+        return
     
     # Calculate and display results
     [result, rounds] = calculate_irv_winner(session_ballots)
@@ -566,6 +567,10 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
     ballots = list(rankings.values())
     rounds = []
 
+    if len(ballots) == 0:
+        print(f"[DEBUG] calculate_irv_winner: No ballots, returning None")
+        return None, rounds
+
     while True:
         # Count first-choice votes
         counts = Counter()
@@ -637,7 +642,7 @@ def update_all_home_tabs(client: WebClient) -> None:
     print(f"[DEBUG] update_all_home_tabs: Updated home tabs for {len(users['members'])} users")
 
 @app.action("request_ballot")
-def handle_request_ballot(ack: Any, body: Dict[str, Any], client: Any) -> None:
+def handle_request_ballot(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
     """Handle requesting a ballot."""
     ack()
     
@@ -670,7 +675,7 @@ def handle_request_ballot(ack: Any, body: Dict[str, Any], client: Any) -> None:
         client.chat_postEphemeral(
             channel=channel_id,
             user=user_id,
-            text=f"You have already submitted your ballot for this vote.\n{rankings_text}"
+            text=f"You have already submitted your ballot for this vote:\n{rankings_text}"
         )
         return
         
@@ -681,7 +686,7 @@ def handle_request_ballot(ack: Any, body: Dict[str, Any], client: Any) -> None:
     )
 
 @app.view("ballot_modal")
-def handle_ballot_submission(ack: Any, body: Dict[str, Any], client: Any) -> None:
+def handle_ballot_submission(ack: SlackAck, body: SlackBody, client: WebClient) -> None:
     """Handle the submission of a ballot from the modal."""
     ack()
     
@@ -718,10 +723,10 @@ def handle_ballot_submission(ack: Any, body: Dict[str, Any], client: Any) -> Non
     db.submit_ballot(message_ts, user_id)
     
     # Send a confirmation message
-    client.chat_postEphemeral(
+    client.chat_postMessage(
         channel=channel_id,
-        user=user_id,
-        text="Your ballot has been submitted!"
+        thread_ts=message_ts,
+        text=f"<@{user_id}> voted! Thank you for doing your civic duty 🫡"
     )
 
 # Start the app
