@@ -568,6 +568,7 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
     """
     print(f"[DEBUG] calculate_irv_winner: Calculating winner from {len(rankings)} ballots")
     ballots = copy.deepcopy(list(rankings.values()))
+    random.shuffle(ballots)
     rounds = []
 
     if len(ballots) == 0:
@@ -620,9 +621,7 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
         for ballot in ballots:
             ballot[:] = [c for c in ballot if c not in to_eliminate]
 
-        shuffled_ballots = copy.deepcopy(ballots)
-        random.shuffle(shuffled_ballots)
-        rounds.append(shuffled_ballots)
+        rounds.append(copy.deepcopy(ballots))
         if len(rounds) > 1000:
             raise Exception("IRV has entered an infinite loop")
 
