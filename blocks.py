@@ -13,7 +13,7 @@ class VotingOption(TypedDict):
     id: str
     text: str
 
-def create_ranked_choice_prompt(user_display_name: str, title: str, description: str = "A ranked choice vote") -> List[Block]:
+def create_ranked_choice_prompt(username: str, title: str, description: str = "A ranked choice vote") -> List[Block]:
     """
     Creates a Slack blocks message for ranked choice voting with interactive buttons.
     
@@ -31,7 +31,7 @@ def create_ranked_choice_prompt(user_display_name: str, title: str, description:
             ButtonElement(text="Request a ballot", style="primary", action_id="request_ballot")
         ]),
         ContextBlock(elements=[
-            PlainTextObject(text=f"Created by @{user_display_name}")
+            PlainTextObject(text=f"Created by {username}")
         ])
     ]
 

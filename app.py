@@ -215,7 +215,7 @@ def handle_start_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     resp = client.users_info(user=body["user"]["id"])
     response = client.chat_postMessage(
         channel=channel_id,
-        blocks=create_ranked_choice_prompt(resp["user"]["profile"]["name"], poll_title, poll_description)
+        blocks=create_ranked_choice_prompt(resp["user"]["name"], poll_title, poll_description)
     )
     
     # Store the message timestamp and mark session as active
