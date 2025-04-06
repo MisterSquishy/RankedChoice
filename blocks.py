@@ -147,7 +147,7 @@ def create_home_view(active_votes: List[Dict[str, str]], all_ballots: Dict[str, 
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*#{channel_name}*: {title}\n{submitted_count} ballot(s) submitted"
+                        "text": f"*#{channel_name}*: {title}\n{submitted_count} {'ballot' if submitted_count == 1 else 'ballots'} submitted"
                     }
                 },
                 {

@@ -14,6 +14,7 @@ primary_region = "bos"
 
 [env]
   PORT = "3000"
+  DB_PATH = "/data/ranked_choice.db"
 
 [mounts]
   source = "data"

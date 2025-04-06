@@ -17,7 +17,8 @@ from blocks import (create_home_view, create_ranked_choice_ballot,
 from database import Database
 
 # Load environment variables
-load_dotenv()
+# fixme needs override=True locally only
+load_dotenv(override=True)
 
 # Define type hints for Slack payloads
 class SlackUser(TypedDict):
@@ -263,7 +264,7 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
     print(f"[DEBUG] handle_stop_voting: Found {len(session_ballots)} submitted ballots for session {message_ts}")
     
     # Calculate and display results
-    result = calculate_irv_winner(session_ballots)
+    [result, rounds] = calculate_irv_winner(session_ballots)
     
     # Create a mapping of option IDs to their text
     option_map = {option["id"]: option["text"] for option in options}
@@ -280,6 +281,15 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
         thread_ts=resp.data.get("ts", None),
         text="Anonymized results:\n"+"\n".join([f"Voter {i+1}: " + ", ".join([option_map.get(option_id, option_id) for option_id in rankings]) for i, rankings in enumerate(sorted(session_ballots.values(), key=lambda x: random.random()))])
     )
+
+    # Raw rounds
+    print(f"[DEBUG] handle_stop_voting: Raw rounds: {rounds}")
+    if len(rounds) > 0:
+        client.chat_postMessage(
+            channel=channel_id,
+            thread_ts=resp.data.get("ts", None),
+            text="\n".join([f"After round {i+1}: " + "\n".join([", ".join([option_map.get(option_id, option_id) for option_id in ballot]) for ballot in round_ballots]) for i, round_ballots in enumerate(rounds)])
+        )
     
     # Mark session as inactive
     active_election["is_active"] = False
@@ -316,14 +326,14 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     print(f"[DEBUG] handle_show_results: Found {len(session_ballots)} submitted ballots for session {message_ts}")
     
     # Calculate and display results
-    result = calculate_irv_winner(session_ballots)
+    [result, rounds] = calculate_irv_winner(session_ballots)
     
     # Create a mapping of option IDs to their text
     option_map = {option["id"]: option["text"] for option in active_election["options"]}
     
     resp = client.chat_postMessage(
         channel=channel_id,
-        text=f"*{active_election['title']} - Current leader:*\n{option_map[result]}"
+        text=f"*{active_election['title']}* current leader:\n{option_map[result]}"
     )
 
     # Raw results
@@ -332,6 +342,14 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
         thread_ts=resp.data.get("ts", None),
         text="Anonymized results:\n"+"\n".join([f"Voter {i+1}: " + ", ".join([option_map.get(option_id, option_id) for option_id in rankings]) for i, rankings in enumerate(sorted(session_ballots.values(), key=lambda x: random.random()))])
     )
+
+    # Raw rounds
+    if len(rounds) > 0:
+        client.chat_postMessage(
+            channel=channel_id,
+            thread_ts=resp.data.get("ts", None),
+            text="\n".join([f"After round {i+1}: " + "\n".join([", ".join([option_map.get(option_id, option_id) for option_id in ballot]) for ballot in round_ballots]) for i, round_ballots in enumerate(rounds)])
+        )
 
 # Handle show results button click
 @app.action("bump")
@@ -534,7 +552,7 @@ def handle_clear_rankings(ack: SlackAck, body: SlackBody, client: WebClient) -> 
         )
     )
 
-def calculate_irv_winner(rankings: Dict[str, List[str]]) -> Optional[str]:
+def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List[List[str]]]]:
     """
     Calculates the winner using Instant Runoff Voting (IRV).
     
@@ -546,6 +564,7 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> Optional[str]:
     """
     print(f"[DEBUG] calculate_irv_winner: Calculating winner from {len(rankings)} ballots")
     ballots = list(rankings.values())
+    rounds = []
 
     while True:
         # Count first-choice votes
@@ -557,13 +576,15 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> Optional[str]:
         total_votes = sum(counts.values())
         if not total_votes:
             print(f"[DEBUG] calculate_irv_winner: No votes left, returning None")
-            return None  # No votes left
+            result = random.choice(list({ballot[0] for ballot in ballots}))
+            print(f"[DEBUG] handle_stop_voting: Randomly selected {result} as winner")
+            return result, rounds
 
         # Check for majority
         for candidate, count in counts.items():
             if count > total_votes / 2:
                 print(f"[DEBUG] calculate_irv_winner: Found majority winner: {candidate}")
-                return candidate
+                return candidate, rounds
 
         # Find the candidate(s) with the fewest votes
         min_count = min(counts.values())
@@ -573,6 +594,8 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> Optional[str]:
         # Eliminate candidate(s) from all ballots
         for ballot in ballots:
             ballot[:] = [c for c in ballot if c not in to_eliminate]
+
+        rounds.append(ballots)
 
 def update_all_home_tabs(client: WebClient) -> None:
     """
@@ -698,7 +721,7 @@ def handle_ballot_submission(ack: Any, body: Dict[str, Any], client: Any) -> Non
     client.chat_postEphemeral(
         channel=channel_id,
         user=user_id,
-        text="Your ballot has been submitted successfully!"
+        text="Your ballot has been submitted!"
     )
 
 # Start the app

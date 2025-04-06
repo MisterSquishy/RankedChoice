@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from typing import Any, Dict, List, Optional, TypedDict
 
@@ -14,8 +15,8 @@ class PollSession(TypedDict):
     options: List[VotingOption]
 
 class Database:
-    def __init__(self, db_path: str = "/data/ranked_choice.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or os.getenv('DB_PATH', 'ranked_choice.db')
         self._init_db()
 
     def _init_db(self):
