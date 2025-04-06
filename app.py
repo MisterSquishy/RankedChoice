@@ -18,7 +18,7 @@ from database import Database
 
 # Load environment variables
 # fixme needs override=True locally only
-load_dotenv(override=True)
+load_dotenv()
 
 # Define type hints for Slack payloads
 class SlackUser(TypedDict):
