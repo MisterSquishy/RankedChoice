@@ -599,6 +599,9 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
         # Eliminate candidate(s) from all ballots
         for ballot in ballots:
             ballot[:] = [c for c in ballot if c not in to_eliminate]
+            if len(ballot) == 0:
+                print(f"[DEBUG] calculate_irv_winner: Removing empty ballot")
+                ballots.remove(ballot)
 
         rounds.append(ballots)
 
