@@ -1,9 +1,10 @@
+import copy
 import json
 import os
 import random
 import uuid
 from collections import Counter
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, Set, TypedDict
 
 from dotenv import load_dotenv
 from slack_bolt import App, Say
@@ -561,10 +562,12 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
         rankings: Dictionary of user rankings (option IDs in preference order)
     
     Returns:
-        The winning option_id or None if no winner
+        tuple[str | None, List[List[List[str]]]]: A tuple containing:
+            - The winning option_id or None if no winner
+            - List of rounds showing ballot state after each elimination
     """
     print(f"[DEBUG] calculate_irv_winner: Calculating winner from {len(rankings)} ballots")
-    ballots = list(rankings.values())
+    ballots = copy.deepcopy(list(rankings.values()))
     rounds = []
 
     if len(ballots) == 0:
@@ -572,16 +575,22 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
         return None, rounds
 
     while True:
+        all_candidates: Set[str] = set()
+        for row in ballots:
+            for vote in row:
+                all_candidates.add(vote)
+                
         # Count first-choice votes
-        counts = Counter()
+        counts = Counter({candidate: 0 for candidate in all_candidates})
         for ballot in ballots:
             if ballot:
                 counts[ballot[0]] += 1
 
         total_votes = sum(counts.values())
         if not total_votes:
-            print(f"[DEBUG] calculate_irv_winner: No votes left, returning None")
-            result = random.choice(list({ballot[0] for ballot in ballots}))
+            print(f"[DEBUG] calculate_irv_winner: No votes left, returning random winnder")
+            original_ballots = copy.deepcopy(list(rankings.values()))
+            result = random.choice(list({ballot[0] for ballot in original_ballots}))
             print(f"[DEBUG] handle_stop_voting: Randomly selected {result} as winner")
             return result, rounds
 
@@ -594,16 +603,17 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
         # Find the candidate(s) with the fewest votes
         min_count = min(counts.values())
         to_eliminate = {c for c, count in counts.items() if count == min_count}
-        print(f"[DEBUG] calculate_irv_winner: Eliminating candidates: {to_eliminate}")
+        print(f"[DEBUG] calculate_irv_winner: Eliminating candidates with {min_count} votes: {to_eliminate}")
 
         # Eliminate candidate(s) from all ballots
         for ballot in ballots:
             ballot[:] = [c for c in ballot if c not in to_eliminate]
-            if len(ballot) == 0:
-                print(f"[DEBUG] calculate_irv_winner: Removing empty ballot")
-                ballots.remove(ballot)
 
-        rounds.append(ballots)
+        shuffled_ballots = copy.deepcopy(ballots)
+        random.shuffle(shuffled_ballots)
+        rounds.append(shuffled_ballots)
+        if len(rounds) > 1000:
+            raise Exception("IRV has entered an infinite loop")
 
 def update_all_home_tabs(client: WebClient) -> None:
     """

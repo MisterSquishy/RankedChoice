@@ -146,7 +146,7 @@ def create_ranked_choice_ballot(title: str, options: List[VotingOption], message
         rankings_text += "No rankings yet"
 
     blocks = [
-        SectionBlock(text="Rank your choices by clicking the buttons below. Your ballot will be private."),
+        SectionBlock(text="Rank your choices by clicking the buttons below. Your ballot is private."),
         DividerBlock(),
         SectionBlock(text=rankings_text),
         DividerBlock(),
