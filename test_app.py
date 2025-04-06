@@ -46,6 +46,35 @@ class TestCalculateIRVWinner(unittest.TestCase):
         self.assertEqual(len(rounds), 0)
         self.assertEqual(winner, "A")
 
+    def test_dead_ballots(self):
+        """Test when one ballot loses all its votes."""
+        rankings = {
+            "voter1": ["A", "B", "C"],
+            "voter2": ["A", "C", "B"],
+            "voter3": ["B", "A", "C"],
+            "voter4": ["B", "C", "A"],
+            "voter5": ["C"],
+        }
+        winner, rounds = calculate_irv_winner(rankings)
+        self.assertEqual(len(rounds), 2)
+        self.assertElementsMatch(rounds[0], [
+            # first round eliminates C
+            ["A", "B"], 
+            ["A", "B"], 
+            ["B", "A"], 
+            ["B", "A"], 
+            [], 
+        ])
+        self.assertElementsMatch(rounds[1], [
+            # second round eliminates A and B
+            [], 
+            [], 
+            [], 
+            [], 
+            [], 
+        ])
+        self.assertIn(winner, ["A", "B"])
+
     def test_majority_winner_after_elimination(self):
         """Test when there's a majority winner after eliminating a candidate."""
         rankings = {

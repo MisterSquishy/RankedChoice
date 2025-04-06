@@ -573,8 +573,8 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
     if len(ballots) == 0:
         print(f"[DEBUG] calculate_irv_winner: No ballots, returning None")
         return None, rounds
-
-    while True:
+    
+    def count_first_choice_votes(ballots: List[List[str]]) -> Counter:
         all_candidates: Set[str] = set()
         for row in ballots:
             for vote in row:
@@ -585,13 +585,24 @@ def calculate_irv_winner(rankings: Dict[str, List[str]]) -> tuple[str, List[List
         for ballot in ballots:
             if ballot:
                 counts[ballot[0]] += 1
+        return counts
+
+    while True:
+        # Count first-choice votes
+        counts = count_first_choice_votes(ballots)
 
         total_votes = sum(counts.values())
         if not total_votes:
-            print(f"[DEBUG] calculate_irv_winner: No votes left, returning random winnder")
-            original_ballots = copy.deepcopy(list(rankings.values()))
-            result = random.choice(list({ballot[0] for ballot in original_ballots}))
-            print(f"[DEBUG] handle_stop_voting: Randomly selected {result} as winner")
+            print(f"[DEBUG] calculate_irv_winner: No votes left, returning plurality winner")
+            original_counts = count_first_choice_votes(copy.deepcopy(list(rankings.values())))
+            max_count = max(original_counts.values())
+            to_randomly_select = {c for c, count in original_counts.items() if count == max_count}
+            if len(to_randomly_select) > 1:
+                print(f"[DEBUG] calculate_irv_winner: Multiple candidates tied for plurality, randomly selecting one")
+                result = random.choice(list(to_randomly_select))
+            else:
+                result = list(to_randomly_select)[0]
+            print(f"[DEBUG] calculate_irv_winner: selected {result} as winner")
             return result, rounds
 
         # Check for majority
