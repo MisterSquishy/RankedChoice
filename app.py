@@ -269,7 +269,7 @@ def handle_stop_voting(ack: SlackAck, body: SlackBody, client: WebClient) -> Non
     # Post final results
     resp = client.chat_postMessage(
         channel=channel_id,
-        text=f"*{title} - Final result:*\n🏆 {option_map[result]} 🏆"
+        text=f"*{title} · final result:*\n🏆 {option_map[result]} 🏆"
     )
 
     # Raw results
@@ -334,7 +334,7 @@ def handle_show_results(ack: SlackAck, body: SlackBody, client: WebClient) -> No
     
     resp = client.chat_postMessage(
         channel=channel_id,
-        text=f"*{active_election['title']}* current leader:\n{option_map[result]}"
+        text=f"*{active_election['title']}* · current leader:\n{option_map[result]}"
     )
 
     # Raw results
